@@ -59,11 +59,10 @@ iframe{flex:1;border:0;width:100%;background:#888}
 
 <section id="app" class="hide">
   <div class="card">
-    <input id="q" class="search" type="search" placeholder="Type anything: area, engineer, JR/JO number, date, notes…" autocomplete="off">
+    <input id="q" class="search" type="search" placeholder="Type anything: area, engineer, JR or JO number, date, notes…" autocomplete="off">
     <div class="grid" style="margin-top:10px">
       <div><label for="fArea">Area</label><select id="fArea"></select></div>
       <div><label for="fEng">Sub-engineer</label><select id="fEng"></select></div>
-      <div><label for="fType">JR / JO</label><select id="fType"><option value="">All</option><option>JR</option><option>JO</option></select></div>
       <div><label for="fFrom">From date</label><input id="fFrom" type="date"></div>
       <div><label for="fTo">To date</label><input id="fTo" type="date"></div>
     </div>
@@ -74,8 +73,8 @@ iframe{flex:1;border:0;width:100%;background:#888}
     <b>Add bill</b>
     <div class="grid" style="margin-top:10px">
       <div><label for="aDate">Date</label><input id="aDate" type="date"></div>
-      <div><label for="aType">JR / JO</label><select id="aType"><option>JR</option><option>JO</option></select></div>
-      <div><label for="aNo">Number</label><input id="aNo"></div>
+      <div><label for="aJr">JR number</label><input id="aJr"></div>
+      <div><label for="aJo">JO number</label><input id="aJo"></div>
       <div><label for="aArea">Area</label><input id="aArea" list="dArea"></div>
       <div><label for="aEng">Sub-engineer</label><input id="aEng" list="dEng"></div>
     </div>
@@ -112,13 +111,15 @@ const txt2b64=t=>{const u=new TextEncoder().encode(t);let s='';u.forEach(b=>s+=S
 const b642txt=b=>new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\n/g,'')),c=>c.charCodeAt(0)));
 const fmt=d=>d?d.split('-').reverse().join('-'):'';
 const show=(el,m)=>{el.textContent=m;el.classList.remove('hide')};
+const norm=b=>{if(b.type&&!b.jr&&!b.jo){b[b.type.toLowerCase()]=b.no}delete b.type;delete b.no;b.jr=b.jr||'';b.jo=b.jo||'';return b};
+const refs=b=>[b.jr?'JR '+b.jr:'',b.jo?'JO '+b.jo:''].filter(Boolean).join(' / ');
 
 async function loadIndex(){
   const r=await api('bills.json');
   if(r.status===404)return {list:[],sha:null};
   if(!r.ok)throw new Error(r.status===401?'Token is wrong or expired.':r.status===403?'Token has no access to this repo.':'GitHub error '+r.status);
   const j=await r.json();
-  return {list:JSON.parse(b642txt(j.content)),sha:j.sha};
+  return {list:JSON.parse(b642txt(j.content)).map(norm),sha:j.sha};
 }
 async function boot(){
   if(!cfg.repo||!cfg.tok){$('setup').classList.remove('hide');$('app').classList.add('hide');return}
@@ -144,22 +145,22 @@ function fill(){
 }
 function render(){
   const words=$('q').value.toLowerCase().split(/\s+/).filter(Boolean);
-  const a=$('fArea').value,e=$('fEng').value,t=$('fType').value,f=$('fFrom').value,to=$('fTo').value;
+  const a=$('fArea').value,e=$('fEng').value,f=$('fFrom').value,to=$('fTo').value;
   const res=bills.filter(b=>{
-    if(a&&b.area!==a||e&&b.eng!==e||t&&b.type!==t||f&&b.date<f||to&&b.date>to)return false;
-    const hay=[b.date,fmt(b.date),b.type,b.no,b.type+b.no,b.type+'-'+b.no,b.area,b.eng,b.notes].join(' ').toLowerCase();
+    if(a&&b.area!==a||e&&b.eng!==e||f&&b.date<f||to&&b.date>to)return false;
+    const hay=[b.date,fmt(b.date),b.jr&&'jr '+b.jr+' jr'+b.jr+' jr-'+b.jr,b.jo&&'jo '+b.jo+' jo'+b.jo+' jo-'+b.jo,b.area,b.eng,b.notes].join(' ').toLowerCase();
     return words.every(w=>hay.includes(w));
   }).sort((x,y)=>y.date.localeCompare(x.date));
   $('count').textContent=res.length+' of '+bills.length+' bills';
   $('list').innerHTML=res.length?res.map(b=>`<div class="row"><div class="date">${fmt(b.date)}</div>
-    <div><span class="ref">${esc(b.type)} ${esc(b.no)}</span><b>${esc(b.area)}</b><div class="meta">${esc(b.eng)}${b.notes?' — '+esc(b.notes):''}</div></div>
+    <div>${b.jr?`<span class="ref">JR ${esc(b.jr)}</span>`:''}${b.jo?`<span class="ref">JO ${esc(b.jo)}</span>`:''}<b>${esc(b.area)}</b><div class="meta">${esc(b.eng)}${b.notes?' — '+esc(b.notes):''}</div></div>
     <button data-id="${b.id}" class="p">Preview</button></div>`).join(''):'<div class="meta">No bill matches. Remove a word or clear a filter.</div>';
 }
-['q','fArea','fEng','fType','fFrom','fTo'].forEach(i=>$(i).addEventListener('input',render));
-$('clr').onclick=()=>{['q','fArea','fEng','fType','fFrom','fTo'].forEach(i=>$(i).value='');render()};
+['q','fArea','fEng','fFrom','fTo'].forEach(i=>$(i).addEventListener('input',render));
+$('clr').onclick=()=>{['q','fArea','fEng','fFrom','fTo'].forEach(i=>$(i).value='');render()};
 $('list').onclick=ev=>{const id=ev.target.dataset.id;if(id)openBill(id,ev.target)};
 
-const fname=b=>`${b.type}-${b.no}_${b.area}_${b.date}.pdf`.replace(/[^\w.-]+/g,'_');
+const fname=b=>`${[b.jr&&'JR'+b.jr,b.jo&&'JO'+b.jo].filter(Boolean).join('_')}_${b.area}_${b.date}.pdf`.replace(/[^\w.-]+/g,'_');
 async function openBill(id,btn){
   cur=bills.find(b=>b.id===id);btn.disabled=true;
   try{
@@ -168,7 +169,7 @@ async function openBill(id,btn){
     curBlob=await r.blob();
     if(curUrl)URL.revokeObjectURL(curUrl);
     curUrl=URL.createObjectURL(curBlob);
-    $('dTitle').textContent=`${cur.type} ${cur.no} — ${cur.area} — ${fmt(cur.date)}`;
+    $('dTitle').textContent=`${refs(cur)} — ${cur.area} — ${fmt(cur.date)}`;
     $('frame').src=curUrl;$('dlg').showModal();
   }catch(e){alert(e.message)}finally{btn.disabled=false}
 }
@@ -177,7 +178,7 @@ $('dTab').onclick=()=>window.open(curUrl,'_blank');
 $('dDown').onclick=()=>{const a=document.createElement('a');a.href=curUrl;a.download=fname(cur);a.click()};
 $('dWa').onclick=async()=>{
   const file=new File([curBlob],fname(cur),{type:'application/pdf'});
-  const title=`Bill ${cur.type} ${cur.no} - ${cur.area} (${fmt(cur.date)})`;
+  const title=`Bill ${refs(cur)} - ${cur.area} (${fmt(cur.date)})`;
   if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title,text:title})}catch(e){}}
   else{$('dDown').click();alert('PDF downloaded. WhatsApp will open; attach the downloaded PDF there.');window.open('https://wa.me/?text='+encodeURIComponent(title),'_blank')}
 };
@@ -198,8 +199,8 @@ async function imagesToPdf(files){
   return pdf.output('blob');
 }
 $('aSave').onclick=async()=>{
-  const m=$('aMsg'),d=$('aDate').value,no=$('aNo').value.trim(),area=$('aArea').value.trim(),eng=$('aEng').value.trim(),files=[...$('aFile').files];
-  if(!d||!no||!area||!eng||!files.length){show(m,'Fill date, number, area, sub-engineer and choose the scan.');return}
+  const m=$('aMsg'),d=$('aDate').value,jr=$('aJr').value.trim(),jo=$('aJo').value.trim(),area=$('aArea').value.trim(),eng=$('aEng').value.trim(),files=[...$('aFile').files];
+  if(!d||!(jr||jo)||!area||!eng||!files.length){show(m,'Fill date, area, sub-engineer, at least one of JR or JO number, and choose the scan.');return}
   if(files.length>1&&files.some(f=>f.type==='application/pdf')){show(m,'Choose one PDF, or only photos.');return}
   $('aSave').disabled=true;show(m,'Preparing file…');
   try{
@@ -209,14 +210,14 @@ $('aSave').onclick=async()=>{
     show(m,`Uploading ${(blob.size/1048576).toFixed(1)} MB…`);
     let r=await api('bills/'+id+'.pdf',{method:'PUT',body:JSON.stringify({message:'Add bill file '+id,content:await b64(blob)})});
     if(!r.ok)throw new Error('Upload failed ('+r.status+'). Check the token has Contents: read and write.');
-    const rec={id,date:d,type:$('aType').value,no,area,eng,notes:$('aNotes').value.trim()};
+    const rec={id,date:d,jr,jo,area,eng,notes:$('aNotes').value.trim()};
     for(let n=0;n<3;n++){
       const x=await loadIndex();x.list.push(rec);
-      r=await api('bills.json',{method:'PUT',body:JSON.stringify({message:'Add bill '+rec.type+' '+no,content:txt2b64(JSON.stringify(x.list,null,1)),...(x.sha?{sha:x.sha}:{})})});
+      r=await api('bills.json',{method:'PUT',body:JSON.stringify({message:'Add bill '+refs(rec),content:txt2b64(JSON.stringify(x.list,null,1)),...(x.sha?{sha:x.sha}:{})})});
       if(r.ok){bills=x.list;break}
       if(r.status!==409&&r.status!==422)throw new Error('Could not save the entry ('+r.status+')');
     }
-    fill();render();['aNo','aNotes','aFile'].forEach(i=>$(i).value='');
+    fill();render();['aJr','aJo','aNotes','aFile'].forEach(i=>$(i).value='');
     show(m,'Saved.');
   }catch(e){show(m,e.message)}finally{$('aSave').disabled=false}
 };
