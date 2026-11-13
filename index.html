@@ -149,3 +149,98 @@ function render(){
   const words=$('q').value.toLowerCase().split(/\s+/).filter(Boolean);
   const a=$('fArea').value,e=$('fEng').value,f=$('fFrom').value,to=$('fTo').value;
   const res=bills.filter(b=>{
+    if(a&&b.area!==a||e&&b.eng!==e||f&&b.date<f||to&&b.date>to)return false;
+    const hay=[b.date,fmt(b.date),b.jr&&'jr '+b.jr+' jr'+b.jr+' jr-'+b.jr,b.jo&&'jo '+b.jo+' jo'+b.jo+' jo-'+b.jo,b.area,b.eng,b.notes].join(' ').toLowerCase();
+    return words.every(w=>hay.includes(w));
+  }).sort((x,y)=>y.date.localeCompare(x.date));
+  $('count').textContent=res.length+' of '+bills.length+' bills';
+  $('list').innerHTML=res.length?res.map(b=>`<div class="row"><div class="date">${fmt(b.date)}</div>
+    <div>${b.jr?`<span class="ref">JR ${esc(b.jr)}</span>`:''}${b.jo?`<span class="ref">JO ${esc(b.jo)}</span>`:''}<b>${esc(b.area)}</b><div class="meta">${esc(b.eng)}${b.notes?' — '+esc(b.notes):''}</div></div>
+    <button data-id="${b.id}" class="p">Preview</button></div>`).join(''):'<div class="meta">No bill matches. Remove a word or clear a filter.</div>';
+}
+['q','fArea','fEng','fFrom','fTo'].forEach(i=>$(i).addEventListener('input',render));
+$('clr').onclick=()=>{['q','fArea','fEng','fFrom','fTo'].forEach(i=>$(i).value='');render()};
+$('list').onclick=ev=>{const id=ev.target.dataset.id;if(id)openBill(id,ev.target)};
+
+const fname=b=>`${[b.jr&&'JR'+b.jr,b.jo&&'JO'+b.jo].filter(Boolean).join('_')}_${b.area}_${b.date}.pdf`.replace(/[^\w.-]+/g,'_');
+
+async function renderPdf(blob){
+  const box=$('pages');box.innerHTML='<div class="msg">Loading bill…</div>';
+  try{
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;
+    box.innerHTML='';
+    const w=Math.max(280,box.clientWidth-16),dpr=Math.min(window.devicePixelRatio||1,2);
+    for(let i=1;i<=pdf.numPages;i++){
+      const pg=await pdf.getPage(i),v1=pg.getViewport({scale:1}),vp=pg.getViewport({scale:w/v1.width*dpr});
+      const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;c.style.width=(vp.width/dpr)+'px';
+      box.appendChild(c);
+      await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+    }
+  }catch(e){box.innerHTML='<div class="msg">Could not show the preview here. Use Download PDF or Open in new tab.</div>'}
+}
+async function openBill(id,btn){
+  cur=bills.find(b=>b.id===id);btn.disabled=true;
+  try{
+    const r=await api('bills/'+id+'.pdf',{headers:{Accept:'application/vnd.github.raw'}});
+    if(!r.ok)throw new Error('Could not load the PDF ('+r.status+')');
+    curBlob=new Blob([await r.arrayBuffer()],{type:'application/pdf'});
+    if(curUrl)URL.revokeObjectURL(curUrl);
+    curUrl=URL.createObjectURL(curBlob);
+    $('dTitle').textContent=`${refs(cur)} — ${cur.area} — ${fmt(cur.date)}`;
+    $('dlg').showModal();
+    await renderPdf(curBlob);
+  }catch(e){alert(e.message)}finally{btn.disabled=false}
+}
+$('dClose').onclick=()=>{$('dlg').close();$('pages').innerHTML=''};
+$('dTab').onclick=()=>window.open(curUrl,'_blank');
+$('dDown').onclick=()=>{const a=document.createElement('a');a.href=curUrl;a.download=fname(cur);a.click()};
+$('dWa').onclick=async()=>{
+  const file=new File([curBlob],fname(cur),{type:'application/pdf'});
+  const title=`Bill ${refs(cur)} - ${cur.area} (${fmt(cur.date)})`;
+  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title,text:title})}catch(e){}}
+  else{$('dDown').click();alert('PDF downloaded. WhatsApp will open; attach the downloaded PDF there.');window.open('https://wa.me/?text='+encodeURIComponent(title),'_blank')}
+};
+
+$('addBtn').onclick=()=>{$('aDate').value=new Date().toISOString().slice(0,10);$('addCard').classList.toggle('hide')};
+$('aCancel').onclick=()=>$('addCard').classList.add('hide');
+
+async function imagesToPdf(files){
+  const {jsPDF}=window.jspdf,pdf=new jsPDF({unit:'mm',format:'a4'});
+  for(let i=0;i<files.length;i++){
+    const bmp=await createImageBitmap(files[i]),k=Math.min(1,1700/Math.max(bmp.width,bmp.height));
+    const c=document.createElement('canvas');c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);
+    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+    const w=210,h=297,s=Math.min(w/c.width,h/c.height),iw=c.width*s,ih=c.height*s;
+    if(i)pdf.addPage();
+    pdf.addImage(c.toDataURL('image/jpeg',.72),'JPEG',(w-iw)/2,(h-ih)/2,iw,ih);
+  }
+  return pdf.output('blob');
+}
+$('aSave').onclick=async()=>{
+  const m=$('aMsg'),d=$('aDate').value,jr=$('aJr').value.trim(),jo=$('aJo').value.trim(),area=$('aArea').value.trim(),eng=$('aEng').value.trim(),files=[...$('aFile').files];
+  if(!d||!(jr||jo)||!area||!eng||!files.length){show(m,'Fill date, area, sub-engineer, at least one of JR or JO number, and choose the scan.');return}
+  if(files.length>1&&files.some(f=>f.type==='application/pdf')){show(m,'Choose one PDF, or only photos.');return}
+  $('aSave').disabled=true;show(m,'Preparing file…');
+  try{
+    const blob=files[0].type==='application/pdf'?files[0]:await imagesToPdf(files);
+    if(blob.size>90*1024*1024)throw new Error('File is over 90 MB. Use photos or compress the PDF first.');
+    const id=Date.now().toString(36);
+    show(m,`Uploading ${(blob.size/1048576).toFixed(1)} MB…`);
+    let r=await api('bills/'+id+'.pdf',{method:'PUT',body:JSON.stringify({message:'Add bill file '+id,content:await b64(blob)})});
+    if(!r.ok)throw new Error('Upload failed ('+r.status+'). Check the token has Contents: read and write.');
+    const rec={id,date:d,jr,jo,area,eng,notes:$('aNotes').value.trim()};
+    for(let n=0;n<3;n++){
+      const x=await loadIndex();x.list.push(rec);
+      r=await api('bills.json',{method:'PUT',body:JSON.stringify({message:'Add bill '+refs(rec),content:txt2b64(JSON.stringify(x.list,null,1)),...(x.sha?{sha:x.sha}:{})})});
+      if(r.ok){bills=x.list;break}
+      if(r.status!==409&&r.status!==422)throw new Error('Could not save the entry ('+r.status+')');
+    }
+    fill();render();['aJr','aJo','aNotes','aFile'].forEach(i=>$(i).value='');
+    show(m,'Saved.');
+  }catch(e){show(m,e.message)}finally{$('aSave').disabled=false}
+};
+boot();
+</script>
+</body>
+</html>
