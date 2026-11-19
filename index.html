@@ -28,10 +28,12 @@ label{display:block;font-size:13px;color:var(--mute);margin-bottom:3px}
 .search{font-size:17px;padding:12px}
 button{cursor:pointer;border:1px solid var(--line);background:var(--card);padding:8px 14px;border-radius:6px}
 button.p{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:500}
+button.big{padding:12px 20px;font-size:16px}
 button.d{color:var(--stamp);border-color:var(--stamp)}
 button:disabled{opacity:.5;cursor:wait}
 .row{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
 .row:first-child{border-top:0}
+.acts{display:flex;flex-direction:column;gap:6px}
 .date{font-weight:600;font-variant-numeric:tabular-nums}
 .ref{display:inline-block;color:var(--stamp);border:1.5px solid var(--stamp);border-radius:4px;padding:0 6px;font-weight:600;font-size:13px;margin-right:6px}
 .meta{color:var(--mute);font-size:13px}
@@ -91,9 +93,13 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 
 <div id="main" class="hide">
 <div class="kpi" id="kpi"></div>
-<div class="tabs"><button id="t1" class="on">Scanned Bills</button><button id="t2">Bill Record Register</button><button id="t0">Dashboard</button></div>
+<div class="tabs"><button id="t0" class="on">Dashboard</button><button id="t1">Scanned Bills</button><button id="t2">Bill Record Register</button></div>
 
-<section id="dash" class="hide">
+<section id="dash">
+  <div class="card">
+    <button id="dNewReg" class="p big">+ Add register entry</button>
+    <button id="dNewScan" class="big">+ Add scanned bill</button>
+  </div>
   <div class="card"><label for="dq">Search all bills (scans and register)</label><input id="dq" type="search" class="search" placeholder="Ref, JO, JR, description, area…"><div id="dres"></div></div>
   <div class="two">
     <div class="card"><h3>By month</h3><div class="tw" id="dmon"></div></div>
@@ -101,7 +107,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   </div>
 </section>
 
-<section id="app">
+<section id="app" class="hide">
   <div class="card">
     <input id="q" class="search" type="search" placeholder="Type anything: area, engineer, JR or JO number, date, notes…" autocomplete="off">
     <div class="grid" style="margin-top:10px">
@@ -133,6 +139,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 
 <section id="reg" class="hide">
   <div class="card">
+    <p style="margin:0 0 12px"><button id="rNew" class="p big">+ New register entry</button></p>
     <div class="grid">
       <div style="grid-column:span 2"><label for="rq">Search description, Ref, JO, JR, invoice</label><input id="rq" type="search" class="search"></div>
       <div><label for="rYear">Year</label><select id="rYear"></select></div>
@@ -141,7 +148,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <div><label for="rTo">To date</label><input id="rTo" type="date"></div>
       <div><label for="rSort">Sort</label><select id="rSort"><option value="sr">Serial</option><option value="dd">Date, newest</option><option value="da">Date, oldest</option><option value="ad">Amount, high</option><option value="aa">Amount, low</option></select></div>
     </div>
-    <p style="margin:10px 0 0"><button id="rNew" class="p">New entry</button> <button id="rClr">Clear filters</button> <button id="rCsv">Export CSV</button> <button id="rPrint">Print (current filter)</button> <button id="rAudit">Audit trail</button></p>
+    <p style="margin:10px 0 0"><button id="rClr">Clear filters</button> <button id="rCsv">Export CSV</button> <button id="rPrint">Print (current filter)</button> <button id="rAudit">Audit trail</button></p>
   </div>
   <div id="rForm" class="card hide">
     <b id="rfT">New register entry</b>
@@ -155,7 +162,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <div><label for="fAmt">Amount (PKR)</label><input id="fAmt" inputmode="decimal"></div>
       <div><label for="fLink">Linked scanned bill (optional)</label><select id="fLink"></select></div>
     </div>
-    <p><button id="rSave" class="p">Save entry</button> <button id="rCancel">Cancel</button></p>
+    <p><button id="rSave" class="p">Save entry</button> <button id="rSaveNew" class="p">Save and add another</button> <button id="rCancel">Cancel</button></p>
     <div id="rMsg" class="msg hide"></div>
   </div>
   <div class="card tw" id="rtab"></div>
@@ -242,12 +249,14 @@ $('saveCfg').onclick=()=>{
 };
 $('cfgBtn').onclick=()=>{$('repo').value=cfg.repo||'';$('who').value=cfg.who||'';$('tok').value='';$('setup').classList.toggle('hide')};
 
-/* ---------- tabs ---------- */
+/* ---------- tabs (Dashboard first) ---------- */
 function tab(n){
   [['t0','dash'],['t1','app'],['t2','reg']].forEach(([b,s],i)=>{$(b).classList.toggle('on',i===n);$(s).classList.toggle('hide',i!==n)});
   if(n===0)dash();
 }
 $('t0').onclick=()=>tab(0);$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+$('dNewReg').onclick=()=>{tab(2);openForm(null)};
+$('dNewScan').onclick=()=>{tab(1);$('aDate').value=new Date().toISOString().slice(0,10);$('addCard').classList.remove('hide');$('addCard').scrollIntoView()};
 
 /* ---------- ref numbers ---------- */
 const refSeq=r=>{const m=/^(\d+)\//.exec(r||'');return m?Number(m[1]):0};
@@ -278,7 +287,7 @@ function dsearch(){
 }
 $('dq').oninput=dsearch;
 
-/* ---------- scanned bills (existing module, unchanged logic) ---------- */
+/* ---------- scanned bills ---------- */
 function uniq(k){return [...new Set(bills.map(b=>b[k]).filter(Boolean))].sort((a,b)=>a.localeCompare(b))}
 function fill(){
   const keep=[$('fArea').value,$('fEng').value];
@@ -299,11 +308,15 @@ function render(){
   $('count').textContent=res.length+' of '+bills.length+' bills';
   $('list').innerHTML=res.length?res.map(b=>`<div class="row"><div class="date">${fmt(b.date)}</div>
     <div>${b.jr?`<span class="ref">JR ${esc(b.jr)}</span>`:''}${b.jo?`<span class="ref">JO ${esc(b.jo)}</span>`:''}<b>${esc(b.area)}</b><div class="meta">${esc(b.eng)}${b.notes?' — '+esc(b.notes):''}</div></div>
-    <button data-id="${b.id}" class="p">Preview</button></div>`).join(''):'<div class="meta">No bill matches. Remove a word or clear a filter.</div>';
+    <div class="acts"><button data-id="${b.id}" class="p">Preview</button><button data-reg="${b.id}">Add to register</button></div></div>`).join(''):'<div class="meta">No bill matches. Remove a word or clear a filter.</div>';
 }
 ['q','fArea','fEng','fFrom','fTo'].forEach(i=>$(i).addEventListener('input',render));
 $('clr').onclick=()=>{['q','fArea','fEng','fFrom','fTo'].forEach(i=>$(i).value='');render()};
-$('list').onclick=ev=>{const id=ev.target.dataset.id;if(id)openBill(id,ev.target)};
+$('list').onclick=ev=>{
+  const id=ev.target.dataset.id,rg=ev.target.dataset.reg;
+  if(id)openBill(id,ev.target);
+  if(rg){const b=bills.find(x=>x.id===rg);if(b){tab(2);openForm(null,{jo:b.jo,jr:b.jr,date:b.date,link:b.id})}}
+};
 
 const fname=b=>`${[b.jr&&'JR'+b.jr,b.jo&&'JO'+b.jo].filter(Boolean).join('_')}_${b.area}_${b.date}.pdf`.replace(/[^\w.-]+/g,'_');
 
@@ -408,12 +421,14 @@ function rrender(){
 }
 ['rq','rYear','rMon','rFrom','rTo','rSort'].forEach(i=>$(i).addEventListener('input',rrender));
 $('rClr').onclick=()=>{['rq','rYear','rMon','rFrom','rTo'].forEach(i=>$(i).value='');$('rSort').value='sr';rrender()};
-function openForm(r){
+function openForm(r,pre){
+  pre=pre||{};
   editId=r?r.id:null;$('rfT').textContent=r?'Edit entry '+r.ref:'New register entry';
   $('fDesc').value=r?r.desc:'';$('fRef').value=r?r.ref:nextRef(reg.rows,reg.meta);$('fRef').dataset.sug=r?'':$('fRef').value;
-  $('fBill').value=r?r.bill:'';$('fDate').value=r?r.date:new Date().toISOString().slice(0,10);
-  $('fJo').value=r?r.jo:'';$('fJr').value=r?r.jr:'';$('fAmt').value=r?(r.amt/100).toFixed(2):'';$('fLink').value=r?r.link||'':'';
-  $('fRef').classList.remove('bad');$('rMsg').classList.add('hide');$('rForm').classList.remove('hide');$('rForm').scrollIntoView();
+  $('fBill').value=r?r.bill:'';$('fDate').value=r?r.date:(pre.date||new Date().toISOString().slice(0,10));
+  $('fJo').value=r?r.jo:(pre.jo||'');$('fJr').value=r?r.jr:(pre.jr||'');$('fAmt').value=r?(r.amt/100).toFixed(2):'';$('fLink').value=r?r.link||'':(pre.link||'');
+  $('rSaveNew').classList.toggle('hide',!!r);
+  $('fRef').classList.remove('bad');$('rMsg').classList.add('hide');$('rForm').classList.remove('hide');$('rForm').scrollIntoView();$('fDesc').focus();
 }
 $('rNew').onclick=()=>openForm(null);
 $('rCancel').onclick=()=>$('rForm').classList.add('hide');
@@ -428,14 +443,14 @@ $('rtab').onclick=async ev=>{
   }
 };
 function audit(d,action,r,oldV,newV){d.audit.push({t:new Date().toISOString(),user:cfg.who||'user',action,id:r.id,ref:r.ref,old:oldV,new:newV});if(d.audit.length>2000)d.audit.splice(0,d.audit.length-2000)}
-$('rSave').onclick=async()=>{
+async function doSave(again){
   const m=$('rMsg'),desc=$('fDesc').value.trim(),date=$('fDate').value,amt=toPaisa($('fAmt').value),ref=$('fRef').value.trim();
   if(!desc){show(m,'Description cannot be empty.');return}
   if(!date||isNaN(Date.parse(date))){show(m,'Enter a valid date.');return}
   if(amt===null){show(m,'Amount must be a non-negative number, up to 2 decimals.');return}
   if(!ref){show(m,'Ref No is required.');return}
   const manual=editId||ref!==$('fRef').dataset.sug;
-  $('rSave').disabled=true;show(m,'Saving…');
+  $('rSave').disabled=true;$('rSaveNew').disabled=true;show(m,'Saving…');
   try{
     const out=await saveReg(d=>{
       let rf=ref;
@@ -447,10 +462,13 @@ $('rSave').onclick=async()=>{
       else{d.rows.push(rec);audit(d,'create',rec,null,rec)}
       return rec;
     },(editId?'Edit':'Add')+' register entry '+ref);
-    $('rForm').classList.add('hide');rfill();rrender();dash();
+    rfill();rrender();dash();
+    if(again&&!editId)openForm(null);else $('rForm').classList.add('hide');
   }catch(e){show(m,e.message);if(e.dup){$('fRef').classList.add('bad');$('fRef').dataset.sug=''; }}
-  finally{$('rSave').disabled=false}
-};
+  finally{$('rSave').disabled=false;$('rSaveNew').disabled=false}
+}
+$('rSave').onclick=()=>doSave(false);
+$('rSaveNew').onclick=()=>doSave(true);
 $('rAudit').onclick=()=>{
   $('audB').innerHTML='<table><tr><th>Time</th><th>User</th><th>Action</th><th>Ref</th><th>Old amount</th><th>New amount</th></tr>'+[...reg.audit].reverse().slice(0,200).map(a=>`<tr><td>${a.t.replace('T',' ').slice(0,19)}</td><td>${esc(a.user)}</td><td>${a.action}</td><td>${esc(a.ref)}</td><td>${a.old?money(a.old.amt):''}</td><td>${a.new?money(a.new.amt):''}</td></tr>`).join('')+'</table>';
   $('aud').showModal();
